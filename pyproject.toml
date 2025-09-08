@@ -1,0 +1,44 @@
+[project]
+name = "groupit"
+version = "0.1.1"
+description = "AI-powered Git commit grouping tool for semantic code organization"
+authors = [
+    { name = "jarry3369", email = "jarry3369@gmail.com" }
+]
+requires-python = ">=3.12"
+keywords = [
+    "git", "commit", "ai", "semantic", "grouping", "agent"
+]
+readme = "README.md"
+
+dependencies = [
+    "gitpython>=3.1.45",
+    "google-generativeai>=0.8.5",
+    "networkx>=3.5",
+    "numpy>=2.3.2",
+    "ollama>=0.3.1",
+    "openai>=1.104.2",
+    "rich>=14.1.0",
+    "scikit-learn>=1.7.1",
+    "sentence-transformers>=5.1.0",
+    "tree-sitter>=0.25.1",
+    "unidiff>=0.7.5",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "ruff>=0.12.12",
+]
+
+[project.urls]
+Repository = "https://github.com/jarry3369/groupit"
+Issues = "https://github.com/jarry3369/groupit/issues"
+Documentation = "https://github.com/jarry3369/groupit/blob/main/README.md"
+
+[project.scripts]
+groupit = "groupit.main:main"
+
+[build-system]
+requires = ["uv_build>=0.8.14,<0.9.0"]
+build-backend = "uv_build"
