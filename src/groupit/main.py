@@ -255,7 +255,7 @@ def debug_info() -> dict:
     # Check dependencies
     dependencies = [
         'git', 'sklearn', 'numpy', 'rich', 'unidiff', 'networkx',
-        'openai', 'google.generativeai'
+        'openai', 'google.genai'
     ]
     
     installed_deps = []

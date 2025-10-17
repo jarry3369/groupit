@@ -81,7 +81,7 @@ def _validate_dependencies() -> bool:
     # Check optional dependencies
     optional_deps = [
         ('openai', 'OpenAI'),
-        ('google.generativeai', 'Google Generative AI')
+        ('google.genai', 'Google Gen AI')
     ]
     
     console.print("\n[dim]Optional Dependencies:[/dim]")

@@ -76,7 +76,7 @@ def setup_logging(settings: Optional[LoggingSettings] = None) -> None:
         'httpx',
         'httpcore',
         'openai',
-        'google.generativeai',
+        'google.genai',
         'git',
         'unidiff'
     ]
