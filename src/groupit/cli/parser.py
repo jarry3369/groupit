@@ -5,7 +5,7 @@ Command-line argument parser for the commit grouping system.
 import argparse
 from typing import List
 
-from ..llm import get_available_providers
+from ..constants import KNOWN_LLM_PROVIDERS
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -120,11 +120,8 @@ def _add_analyze_arguments(parser: argparse.ArgumentParser) -> None:
     # LLM options
     llm_group = parser.add_argument_group('LLM options')
     
-    available_providers = []
-    try:
-        available_providers = get_available_providers()
-    except Exception:
-        available_providers = ['openai', 'gemini']
+    # Use static provider list for CLI help - validated at runtime when used
+    available_providers = KNOWN_LLM_PROVIDERS
     
     llm_group.add_argument(
         '--llm',

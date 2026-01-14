@@ -16,9 +16,8 @@ def main() -> int:
             print(_get_pkg_version())
             return 0
         
-        # Import CLI components only when needed
+        # Import only parser and validation - defer command imports
         from .cli import create_parser
-        from .cli.commands import analyze_command, commit_command, status_command, validate_command
         from .cli.parser import validate_arguments
         from .config import setup_logging
         
@@ -53,14 +52,18 @@ def main() -> int:
             if config_path.exists():
                 get_settings(config_path, force_reload=True)
         
-        # Dispatch to appropriate command
+        # Dispatch to appropriate command - import only the needed command
         if args.command == 'analyze':
+            from .cli.commands import analyze_command
             return analyze_command(args)
         elif args.command == 'commit':
+            from .cli.commands import commit_command
             return commit_command(args)
         elif args.command == 'status':
+            from .cli.commands import status_command
             return status_command(args)
         elif args.command == 'validate':
+            from .cli.commands import validate_command
             return validate_command(args)
         else:
             print(f"Error: Unknown command '{args.command}'", file=sys.stderr)
