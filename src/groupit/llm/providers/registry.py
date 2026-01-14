@@ -36,6 +36,17 @@ class ProviderRegistry:
             self.register('ollama', OllamaProvider)
         except ImportError:
             logger.warning("Ollama provider not available")
+            
+        # Validate against constants
+        from ...constants import KNOWN_LLM_PROVIDERS
+        
+        registered = set(self._providers.keys())
+        known = set(KNOWN_LLM_PROVIDERS)
+        
+        # Check for providers registered but not in constants
+        extra = registered - known
+        if extra:
+            logger.warning(f"Providers registered but not in KNOWN_LLM_PROVIDERS: {extra}. Update constants.py.")
     
     def register(self, name: str, provider_class: Type[LLMProvider]) -> None:
         """Register a new LLM provider"""
