@@ -1,0 +1,55 @@
+name: Bump and Release Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Type of release'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_PAT }}
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump Version and Push Release Tag
+        id: bump
+        run: |
+          uv version --bump ${{ inputs.bump_type }}
+          
+          NEW_VERSION="v$(uv version --short)"
+          echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          
+          git add pyproject.toml
+          git commit -m "chore(release): ${NEW_VERSION}"
+          
+          git tag -a "${NEW_VERSION}" -m "Release ${NEW_VERSION}"
+          
+          git push origin main
+          git push origin "${NEW_VERSION}"
