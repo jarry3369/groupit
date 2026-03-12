@@ -61,6 +61,15 @@ class LoggingSettings:
 
 
 @dataclass
+class GitSettings:
+    """Git split/metadata defaults."""
+    preserve_metadata_by_default: bool = False
+    preserve_date_mode: str = 'all'
+    date_increment_seconds: int = 1
+    gpg_sign_key: Optional[str] = None
+
+
+@dataclass
 class Settings:
     """Main application settings"""
     
@@ -73,6 +82,7 @@ class Settings:
     clustering: ClusteringSettings = field(default_factory=ClusteringSettings)
     performance: PerformanceSettings = field(default_factory=PerformanceSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
+    git: GitSettings = field(default_factory=GitSettings)
     
     # File paths
     config_file: Optional[Path] = None
@@ -111,6 +121,17 @@ class Settings:
         settings.logging.level = os.getenv('GROUPIT_LOG_LEVEL', settings.logging.level)
         settings.logging.file_path = os.getenv('GROUPIT_LOG_FILE')
         settings.logging.enable_file = bool(settings.logging.file_path)
+
+        settings.git.preserve_metadata_by_default = os.getenv(
+            'GROUPIT_GIT_PRESERVE_METADATA', ''
+        ).lower() in ('true', '1', 'yes')
+        settings.git.preserve_date_mode = os.getenv(
+            'GROUPIT_GIT_PRESERVE_DATE', settings.git.preserve_date_mode
+        )
+        settings.git.date_increment_seconds = int(
+            os.getenv('GROUPIT_GIT_DATE_INCREMENT', str(settings.git.date_increment_seconds))
+        )
+        settings.git.gpg_sign_key = os.getenv('GROUPIT_GIT_GPG_SIGN_KEY')
         
         # Output directory
         output_dir = os.getenv('GROUPIT_OUTPUT_DIR')
@@ -146,6 +167,8 @@ class Settings:
                     self._update_performance_settings(value)
                 elif key == 'logging' and isinstance(value, dict):
                     self._update_logging_settings(value)
+                elif key == 'git' and isinstance(value, dict):
+                    self._update_git_settings(value)
                 else:
                     setattr(self, key, value)
     
@@ -172,6 +195,12 @@ class Settings:
         for key, value in data.items():
             if hasattr(self.logging, key):
                 setattr(self.logging, key, value)
+
+    def _update_git_settings(self, data: Dict[str, Any]) -> None:
+        """Update git settings from dictionary"""
+        for key, value in data.items():
+            if hasattr(self.git, key):
+                setattr(self.git, key, value)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert settings to dictionary"""
@@ -203,6 +232,12 @@ class Settings:
                 'enable_console': self.logging.enable_console,
                 'enable_file': self.logging.enable_file,
                 'file_path': self.logging.file_path
+            },
+            'git': {
+                'preserve_metadata_by_default': self.git.preserve_metadata_by_default,
+                'preserve_date_mode': self.git.preserve_date_mode,
+                'date_increment_seconds': self.git.date_increment_seconds,
+                'gpg_sign_key': self.git.gpg_sign_key
             },
             'output_dir': str(self.output_dir),
             'supported_languages': self.supported_languages

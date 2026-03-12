@@ -31,6 +31,35 @@ def collect_diff(repo: Repo, staged: bool) -> PatchSet:
     return PatchSet(diff_text)
 
 
+def collect_commit_diff(repo: Repo, commit_hash: str) -> PatchSet:
+    """Collect the diff introduced by a specific commit as PatchSet."""
+    commit = repo.commit(commit_hash)
+    if not commit.parents:
+        raise ValueError(f"Cannot analyze root commit {commit_hash} for splitting")
+
+    diff_text = repo.git.diff(f'{commit.hexsha}^', commit.hexsha, unified=0)
+    return PatchSet(diff_text)
+
+
+def materialize_commit_tree(repo: Repo, commit_hash: str, destination: Path) -> None:
+    """Write a commit tree to a destination directory for snapshot-based analysis."""
+    commit = repo.commit(commit_hash)
+
+    for item in commit.tree.traverse():
+        item_path = destination / item.path
+
+        if item.type == 'tree':
+            item_path.mkdir(parents=True, exist_ok=True)
+            continue
+
+        if item.type != 'blob':
+            continue
+
+        item_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(item_path, 'wb') as output_file:
+            output_file.write(item.data_stream.read())
+
+
 def added_line_ranges_from_hunks(file_patch) -> List[Tuple[int, int]]:
     """Extract line ranges from diff hunks"""
     ranges = []

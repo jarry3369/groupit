@@ -5,7 +5,14 @@ This module uses lazy loading (PEP 562) to avoid importing heavy
 dependencies until they are actually needed.
 """
 
-__all__ = ['create_parser', 'analyze_command', 'commit_command', 'status_command', 'validate_command']
+__all__ = [
+    'create_parser',
+    'analyze_command',
+    'commit_command',
+    'split_command',
+    'status_command',
+    'validate_command',
+]
 
 # Cache for lazy-loaded components
 _cached: dict = {}
@@ -27,7 +34,7 @@ def __getattr__(name: str):
         from .commands import analyze_command
         _cached['analyze_command'] = analyze_command
         return analyze_command
-    
+
     if name == 'commit_command':
         from .commands import commit_command
         _cached['commit_command'] = commit_command
@@ -42,5 +49,10 @@ def __getattr__(name: str):
         from .commands import validate_command
         _cached['validate_command'] = validate_command
         return validate_command
+
+    if name == 'split_command':
+        from .commands import split_command
+        _cached['split_command'] = split_command
+        return split_command
     
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

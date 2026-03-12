@@ -3,6 +3,9 @@ Main agent for commit grouping that integrates with Git repositories.
 """
 
 import json
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -13,7 +16,13 @@ from rich.table import Table
 
 from .models import CommitGroup, GroupingResult
 from .pipeline import CommitGroupingPipeline
-from .git_operations import collect_diff, build_blocks
+from .git_operations import collect_diff, collect_commit_diff, build_blocks, materialize_commit_tree
+from .metadata import (
+    CommitMetadata,
+    build_git_env_for_metadata,
+    build_preserved_commit_kwargs,
+    offset_datetime,
+)
 from ..config import get_settings, get_logger
 
 logger = get_logger(__name__)
@@ -68,46 +77,84 @@ class CommitGroupingAgent:
         Returns:
             GroupingResult or None if no changes found
         """
+        mode_label = 'Staged changes' if staged else 'Working directory changes'
+        patch = collect_diff(self.repo, staged=staged)
+        return self.analyze_patch(
+            patch=patch,
+            llm_provider=llm_provider,
+            llm_api_key=llm_api_key,
+            output_file=output_file,
+            mode_label=mode_label,
+            **pipeline_overrides
+        )
+
+    def analyze_commit(
+        self,
+        commit_hash: str,
+        llm_provider: Optional[str] = None,
+        llm_api_key: Optional[str] = None,
+        output_file: Optional[str] = None,
+        **pipeline_overrides
+    ) -> Optional[GroupingResult]:
+        """Analyze the diff introduced by a specific commit."""
+        patch = collect_commit_diff(self.repo, commit_hash)
+        with tempfile.TemporaryDirectory(prefix='groupit-commit-snapshot-') as temp_dir:
+            snapshot_root = Path(temp_dir)
+            materialize_commit_tree(self.repo, commit_hash, snapshot_root)
+            return self.analyze_patch(
+                patch=patch,
+                llm_provider=llm_provider,
+                llm_api_key=llm_api_key,
+                output_file=output_file,
+                mode_label=f'Commit {commit_hash[:8]}',
+                source_root=snapshot_root,
+                **pipeline_overrides
+            )
+
+    def analyze_patch(
+        self,
+        patch,
+        llm_provider: Optional[str] = None,
+        llm_api_key: Optional[str] = None,
+        output_file: Optional[str] = None,
+        mode_label: str = 'Patch changes',
+        source_root: Optional[Path] = None,
+        **pipeline_overrides
+    ) -> Optional[GroupingResult]:
+        """Analyze a prepared patch and create commit groups."""
         console.print(Panel.fit(
             f"[bold]Commit Grouping Analysis[/bold]\n"
             f"Repository: {self.repo_path}\n"
-            f"Mode: {'Staged changes' if staged else 'Working directory changes'}\n"
+            f"Mode: {mode_label}\n"
             f"LLM Provider: {llm_provider or self.settings.llm.provider}",
             border_style="blue"
         ))
-        
+
         try:
-            # Collect Git changes
-            patch = collect_diff(self.repo, staged=staged)
             if not str(patch).strip():
                 console.print("[yellow]No changes detected[/yellow]")
                 return None
-            
-            # Build change blocks
-            blocks = build_blocks(self.repo_root, patch)
+
+            blocks = build_blocks(source_root or self.repo_root, patch)
             if not blocks:
                 console.print("[yellow]No analyzable blocks found[/yellow]")
                 return None
-            
+
             console.print(f"[green]Found {len(blocks)} change blocks in {len(set(b.file_path for b in blocks))} files[/green]")
-            
-            # Execute pipeline
+
             result = self.pipeline.execute(
                 change_blocks=blocks,
                 llm_provider=llm_provider,
                 llm_api_key=llm_api_key,
                 **pipeline_overrides
             )
-            
-            # Save results if requested
+
             if output_file:
                 self.save_results(result, output_file)
-            
-            # Display results
+
             self.display_results(result)
-            
             return result
-            
+
         except Exception as e:
             logger.error(f"Analysis failed: {e}")
             console.print(f"[red]Analysis failed: {e}[/red]")
@@ -117,8 +164,12 @@ class CommitGroupingAgent:
         self,
         result: GroupingResult,
         dry_run: bool = True,
-        auto_confirm: bool = False
-    ) -> None:
+        auto_confirm: bool = False,
+        commit_metadata: Optional[CommitMetadata] = None,
+        date_increment_seconds: int = 1,
+        preserve_date_mode: str = 'all',
+        gpg_sign: Optional[str] = None,
+    ) -> int:
         """
         Create actual Git commits from grouping result
         
@@ -126,10 +177,14 @@ class CommitGroupingAgent:
             result: GroupingResult from analysis
             dry_run: If True, don't actually create commits
             auto_confirm: If True, don't ask for confirmation
+            commit_metadata: Source metadata to preserve across replacement commits
+            date_increment_seconds: Seconds added between preserved commit dates
+            preserve_date_mode: 'all' to preserve each rewritten date, 'single' for first only
+            gpg_sign: Optional GPG key id for signed commits
         """
         if not result or not result.final_groups:
             console.print("[yellow]No groups to commit[/yellow]")
-            return
+            return 0
         
         console.rule("[bold]Creating Commits[/bold]")
         
@@ -140,9 +195,10 @@ class CommitGroupingAgent:
             from rich.prompt import Confirm
             if not Confirm.ask("Proceed with creating commits?"):
                 console.print("[yellow]Commit creation cancelled[/yellow]")
-                return
+                return 0
         
         # Create commits
+        successful_commits = 0
         for i, group in enumerate(result.final_groups, 1):
             console.print(f"\n[cyan]Creating commit {i}/{len(result.final_groups)}[/cyan]")
             
@@ -162,21 +218,91 @@ class CommitGroupingAgent:
                     
                     # Add only the files for this group
                     self.repo.index.add(group.files)
-                    
-                    # Create commit
-                    commit = self.repo.index.commit(group.commit_message)
+
+                    commit = self.commit_staged_changes(
+                        message=group.commit_message,
+                        commit_metadata=commit_metadata,
+                        commit_index=i - 1,
+                        date_increment_seconds=date_increment_seconds,
+                        preserve_date_mode=preserve_date_mode,
+                        gpg_sign=gpg_sign,
+                    )
                     console.print(f"[green]✓ Committed: {commit.hexsha[:8]}[/green]")
+                    successful_commits += 1
                     
                 except Exception as e:
                     console.print(f"[red]✗ Failed to commit: {e}[/red]")
                     logger.error(f"Failed to create commit for group {group.group_id}: {e}")
+                    raise RuntimeError(
+                        f"Failed to create commit for group {group.group_id}"
+                    ) from e
             else:
+                if commit_metadata:
+                    seconds_offset = (i - 1) * date_increment_seconds
+                    console.print(
+                        f"[dim]Preserving author {commit_metadata.author_name} "
+                        f"<{commit_metadata.author_email}>[/dim]"
+                    )
+                    console.print(
+                        f"[dim]Preserving committer {commit_metadata.committer_name} "
+                        f"<{commit_metadata.committer_email}>[/dim]"
+                    )
+                    console.print(
+                        f"[dim]Author date: {offset_datetime(commit_metadata.authored_date, seconds_offset).isoformat()}[/dim]"
+                    )
+                if gpg_sign:
+                    console.print(f"[dim]GPG sign: {gpg_sign}[/dim]")
                 console.print("[yellow]→ Dry run (not committed)[/yellow]")
         
         if dry_run:
             console.print("\n[yellow]This was a dry run. Use --execute to actually create commits.[/yellow]")
         else:
             console.print(f"\n[green]Successfully created {len(result.final_groups)} commits[/green]")
+
+        return len(result.final_groups) if dry_run else successful_commits
+
+    def commit_staged_changes(
+        self,
+        message: str,
+        commit_metadata: Optional[CommitMetadata] = None,
+        commit_index: int = 0,
+        date_increment_seconds: int = 1,
+        preserve_date_mode: str = 'all',
+        gpg_sign: Optional[str] = None,
+    ):
+        """Commit the current staged index state with optional preserved metadata."""
+        commit_kwargs = {'message': message}
+
+        if gpg_sign:
+            env = os.environ.copy()
+            if commit_metadata:
+                env.update(
+                    build_git_env_for_metadata(
+                        commit_metadata,
+                        commit_index,
+                        date_increment_seconds,
+                        preserve_date_mode,
+                    )
+                )
+            subprocess.run(
+                ['git', 'commit', '-m', message, f'--gpg-sign={gpg_sign}'],
+                check=True,
+                cwd=self.repo_root,
+                env=env,
+            )
+            return self.repo.head.commit
+
+        if commit_metadata:
+            commit_kwargs.update(
+                build_preserved_commit_kwargs(
+                    commit_metadata,
+                    commit_index,
+                    date_increment_seconds,
+                    preserve_date_mode,
+                )
+            )
+
+        return self.repo.index.commit(**commit_kwargs)
     
     def load_results(self, input_file: str) -> GroupingResult:
         """

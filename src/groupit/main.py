@@ -65,6 +65,9 @@ def main() -> int:
         elif args.command == 'validate':
             from .cli.commands import validate_command
             return validate_command(args)
+        elif args.command == 'split':
+            from .cli.commands import split_command
+            return split_command(args)
         else:
             print(f"Error: Unknown command '{args.command}'", file=sys.stderr)
             parser.print_help()

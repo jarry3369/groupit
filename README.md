@@ -18,6 +18,8 @@ GroupIt revolutionizes how you manage Git commits by intelligently analyzing you
 - **🌊 4-Stage Pipeline**: Primary grouping → Summary generation → Semantic grouping → Message generation
 - **🎨 Beautiful CLI**: Rich terminal interface with colored output and progress indicators
 - **⚡ Performance Optimized**: Caching, parallel processing, and batch operations
+- **✂️ Split Command**: Preview or rewrite a commit into grouped replacement commits
+- **🕰️ Metadata Preservation**: Preserve source author identity and dates when splitting
 
 ## 🛠️ Installation
 
@@ -68,6 +70,12 @@ export GROUPIT_MAX_WORKERS="4"
 # Logging
 export GROUPIT_LOG_LEVEL="INFO"
 export GROUPIT_DEBUG="false"
+
+# Git split defaults
+export GROUPIT_GIT_PRESERVE_METADATA="true"
+export GROUPIT_GIT_PRESERVE_DATE="all"
+export GROUPIT_GIT_DATE_INCREMENT="1"
+export GROUPIT_GIT_GPG_SIGN_KEY=""
 ```
 
 ## 📖 Usage
@@ -86,6 +94,12 @@ groupit analyze --llm ollama --model llama3.2
 
 # Create commits from analysis results
 groupit commit results.json --execute
+
+# Preview how the current HEAD commit would be split
+groupit split HEAD --llm none
+
+# Rewrite a historical ancestor commit and preserve author/date metadata
+groupit split HEAD~2 --execute --preserve-metadata
 ```
 
 ### Command Reference
@@ -116,6 +130,41 @@ Options:
   --auto-confirm        Don't ask for confirmation
   --force               Force creation even if repo is dirty
 ```
+
+#### Split Commit
+```bash
+groupit split <commit-hash> [OPTIONS]
+
+Options:
+  --execute                Actually rewrite the target commit and replay descendants when needed
+  --auto-confirm           Don't ask for confirmation before creating replacement commits
+  --preserve-metadata      Preserve source commit author and dates
+  --preserve-date MODE     Preserve dates for all rewritten commits or only the first one
+  --date-increment INT     Seconds to increment preserved dates between replacement commits
+  --author NAME            Override author name
+  --author-email EMAIL     Override author email
+  --author-date ISO        Override author date
+  --committer-name NAME    Override committer name
+  --committer-email EMAIL  Override committer email
+  --committer-date ISO     Override committer date
+  --gpg-sign KEY           Sign rewritten commits with the given GPG key id
+  --llm PROVIDER           LLM provider (openai, gemini, ollama, none)
+  --api-key KEY            API key for LLM provider
+  --model MODEL            Specific model to use
+  --temperature TEMP       LLM temperature (0.0-2.0)
+  --eps FLOAT              DBSCAN clustering epsilon
+  --min-samples INT        DBSCAN minimum samples
+  --output FILE            Save analysis results to JSON file
+  --verbose, -v            Enable verbose output
+  --quiet, -q              Suppress non-essential output
+```
+
+Current limitations:
+- The target commit must be `HEAD` or one of its ancestors on the current branch.
+- Root commits and merge commits are not supported.
+- The tracked worktree must be clean before analysis or execution.
+- Historical ancestor rewrite still blocks grouped file overlaps and file removals.
+- GPG signing is wired but was not exercised end-to-end in this environment with a real signing key.
 
 #### Check Status
 ```bash

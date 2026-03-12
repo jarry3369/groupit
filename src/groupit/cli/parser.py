@@ -20,6 +20,7 @@ Examples:
   groupit analyze --staged --llm openai --api-key YOUR_KEY
   groupit analyze --llm gemini --output results.json
   groupit commit results.json --execute
+  groupit split HEAD --execute
   groupit status
         """
     )
@@ -81,6 +82,14 @@ Examples:
         description='Check if all required dependencies and configurations are available'
     )
     _add_validate_arguments(validate_parser)
+
+    # Split command
+    split_parser = subparsers.add_parser(
+        'split',
+        help='Analyze and split a commit into grouped commits',
+        description='Preview or split the current HEAD commit or one of its ancestors using the commit grouping pipeline'
+    )
+    _add_split_arguments(split_parser)
     
     return parser
 
@@ -251,6 +260,166 @@ def _add_validate_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_split_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments for the split command."""
+    parser.add_argument(
+        'commit_hash',
+        type=str,
+        help='Commit hash to analyze or split (must be HEAD or one of its ancestors)'
+    )
+
+    parser.add_argument(
+        '--execute',
+        action='store_true',
+        help='Actually rewrite the target commit and replay descendant commits when needed'
+    )
+
+    parser.add_argument(
+        '--auto-confirm',
+        action='store_true',
+        help="Don't ask for confirmation before creating replacement commits"
+    )
+
+    parser.add_argument(
+        '--preserve-metadata',
+        action='store_true',
+        help='Preserve source commit author and dates when creating replacement commits'
+    )
+
+    parser.add_argument(
+        '--preserve-date',
+        choices=['all', 'single'],
+        default=None,
+        help='How to preserve dates: all rewritten commits or only the first one'
+    )
+
+    parser.add_argument(
+        '--date-increment',
+        type=int,
+        default=None,
+        help='Seconds to increment preserved dates between replacement commits'
+    )
+
+    parser.add_argument(
+        '--author',
+        type=str,
+        help='Override author name for rewritten commits'
+    )
+    parser.add_argument(
+        '--author-email',
+        type=str,
+        help='Override author email for rewritten commits'
+    )
+    parser.add_argument(
+        '--author-date',
+        type=str,
+        help='Override author date (ISO-8601)'
+    )
+    parser.add_argument(
+        '--committer-name',
+        type=str,
+        help='Override committer name for rewritten commits'
+    )
+    parser.add_argument(
+        '--committer-email',
+        type=str,
+        help='Override committer email for rewritten commits'
+    )
+    parser.add_argument(
+        '--committer-date',
+        type=str,
+        help='Override committer date (ISO-8601)'
+    )
+
+    parser.add_argument(
+        '--gpg-sign',
+        type=str,
+        help='Sign rewritten commits with the given GPG key id'
+    )
+
+    llm_group = parser.add_argument_group('LLM options')
+    available_providers = KNOWN_LLM_PROVIDERS
+
+    llm_group.add_argument(
+        '--llm',
+        choices=available_providers + ['none'],
+        default='openai',
+        help=f'LLM provider for semantic analysis (default: openai, available: {", ".join(available_providers)})'
+    )
+    llm_group.add_argument(
+        '--api-key',
+        type=str,
+        help='API key for LLM provider (can also use environment variables)'
+    )
+    llm_group.add_argument(
+        '--model',
+        type=str,
+        help='Specific model to use (uses provider default if not specified)'
+    )
+    llm_group.add_argument(
+        '--temperature',
+        type=float,
+        default=0.3,
+        help='LLM temperature for generation (default: 0.3)'
+    )
+
+    clustering_group = parser.add_argument_group('Clustering options')
+    clustering_group.add_argument(
+        '--eps',
+        type=float,
+        default=0.35,
+        help='DBSCAN eps parameter for clustering (default: 0.35)'
+    )
+    clustering_group.add_argument(
+        '--min-samples',
+        type=int,
+        default=2,
+        help='DBSCAN minimum samples parameter (default: 2)'
+    )
+    clustering_group.add_argument(
+        '--alpha',
+        type=float,
+        default=0.4,
+        help='Graph weight factor in similarity calculation (default: 0.4)'
+    )
+
+    processing_group = parser.add_argument_group('Processing options')
+    processing_group.add_argument(
+        '--max-iterations',
+        type=int,
+        default=2,
+        help='Maximum iterations for semantic grouping (default: 2)'
+    )
+    processing_group.add_argument(
+        '--batch-size',
+        type=int,
+        default=5,
+        help='Batch size for processing large numbers of groups (default: 5)'
+    )
+    processing_group.add_argument(
+        '--no-caching',
+        action='store_true',
+        help='Disable caching for this run'
+    )
+
+    output_group = parser.add_argument_group('Output options')
+    output_group.add_argument(
+        '--output', '-o',
+        type=str,
+        help='Save analysis results to JSON file'
+    )
+    output_group.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose output'
+    )
+    output_group.add_argument(
+        '--quiet', '-q',
+        action='store_true',
+        help='Suppress non-essential output'
+    )
+
+
 def validate_arguments(args: argparse.Namespace) -> List[str]:
     """
     Validate parsed arguments and return list of validation errors
@@ -283,6 +452,31 @@ def validate_arguments(args: argparse.Namespace) -> List[str]:
         if args.batch_size < 1:
             errors.append("--batch-size must be at least 1")
         
+        if args.quiet and args.verbose:
+            errors.append("Cannot use both --quiet and --verbose")
+
+    elif args.command == 'split':
+        if args.date_increment is not None and args.date_increment < 0:
+            errors.append("--date-increment must be zero or greater")
+
+        if args.eps <= 0:
+            errors.append("--eps must be positive")
+
+        if args.min_samples < 1:
+            errors.append("--min-samples must be at least 1")
+
+        if args.alpha < 0 or args.alpha > 1:
+            errors.append("--alpha must be between 0 and 1")
+
+        if args.temperature < 0 or args.temperature > 2:
+            errors.append("--temperature must be between 0 and 2")
+
+        if args.max_iterations < 1:
+            errors.append("--max-iterations must be at least 1")
+
+        if args.batch_size < 1:
+            errors.append("--batch-size must be at least 1")
+
         if args.quiet and args.verbose:
             errors.append("Cannot use both --quiet and --verbose")
     
