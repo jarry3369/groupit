@@ -7,6 +7,7 @@ dependencies (core, llm, rich) until a command is actually invoked.
 
 __all__ = [
     'analyze_command',
+    'auth_command',
     'commit_command',
     'status_command',
     'validate_command',
@@ -28,6 +29,11 @@ def __getattr__(name: str):
         from .analyze import analyze_command
         _cached_commands['analyze_command'] = analyze_command
         return analyze_command
+
+    if name == 'auth_command':
+        from .auth import auth_command
+        _cached_commands['auth_command'] = auth_command
+        return auth_command
     
     if name == 'commit_command':
         from .commit import commit_command

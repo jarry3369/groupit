@@ -17,7 +17,8 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  groupit analyze --staged --llm openai --api-key YOUR_KEY
+  groupit auth login openai
+  groupit analyze --staged --llm openai
   groupit analyze --llm gemini --output results.json
   groupit commit results.json --execute
   groupit split HEAD --execute
@@ -67,6 +68,14 @@ Examples:
     )
     _add_commit_arguments(commit_parser)
     
+    # Auth command
+    auth_parser = subparsers.add_parser(
+        'auth',
+        help='Manage stored LLM provider credentials',
+        description='Store, inspect, and remove provider credentials for local CLI use'
+    )
+    _add_auth_arguments(auth_parser)
+
     # Status command
     status_parser = subparsers.add_parser(
         'status',
@@ -141,7 +150,7 @@ def _add_analyze_arguments(parser: argparse.ArgumentParser) -> None:
     llm_group.add_argument(
         '--api-key',
         type=str,
-        help='API key for LLM provider (can also use environment variables)'
+        help='API key override for LLM provider (deprecated; prefer `groupit auth login`)'
     )
     llm_group.add_argument(
         '--model',
@@ -235,6 +244,49 @@ def _add_status_arguments(parser: argparse.ArgumentParser) -> None:
         '--detailed',
         action='store_true',
         help='Show detailed status information'
+    )
+
+
+def _add_auth_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments for the auth command."""
+    auth_subparsers = parser.add_subparsers(
+        dest='auth_action',
+        help='Authentication actions',
+        metavar='AUTH_COMMAND',
+    )
+
+    providers = KNOWN_LLM_PROVIDERS
+
+    login_parser = auth_subparsers.add_parser(
+        'login',
+        help='Store a provider credential in the local keyring',
+    )
+    login_parser.add_argument('provider', choices=providers, help='Provider to authenticate')
+    login_parser.add_argument(
+        '--api-key',
+        type=str,
+        help='API key for non-interactive use (prefer prompt input for local use)',
+    )
+    login_parser.add_argument(
+        '--no-validate',
+        action='store_true',
+        help='Store the credential without validating it against the provider',
+    )
+
+    logout_parser = auth_subparsers.add_parser(
+        'logout',
+        help='Remove a stored provider credential',
+    )
+    logout_parser.add_argument('provider', choices=providers, help='Provider to remove')
+
+    status_parser = auth_subparsers.add_parser(
+        'status',
+        help='Show credential source and validation state for each provider',
+    )
+    status_parser.add_argument(
+        '--json',
+        action='store_true',
+        help='Output auth status in JSON format',
     )
 
 
@@ -349,7 +401,7 @@ def _add_split_arguments(parser: argparse.ArgumentParser) -> None:
     llm_group.add_argument(
         '--api-key',
         type=str,
-        help='API key for LLM provider (can also use environment variables)'
+        help='API key override for LLM provider (deprecated; prefer `groupit auth login`)'
     )
     llm_group.add_argument(
         '--model',
@@ -479,6 +531,10 @@ def validate_arguments(args: argparse.Namespace) -> List[str]:
 
         if args.quiet and args.verbose:
             errors.append("Cannot use both --quiet and --verbose")
+
+    elif args.command == 'auth':
+        if not getattr(args, 'auth_action', None):
+            errors.append("auth requires a subcommand: login, logout, or status")
     
     # Validate commit command arguments
     elif args.command == 'commit':

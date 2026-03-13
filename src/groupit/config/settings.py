@@ -9,6 +9,8 @@ from typing import Optional, Dict, Any, List
 import json
 from functools import lru_cache
 
+from .paths import get_default_config_path
+
 
 @dataclass
 class LLMSettings:
@@ -87,6 +89,7 @@ class Settings:
     # File paths
     config_file: Optional[Path] = None
     output_dir: Path = field(default_factory=lambda: Path.cwd())
+    auth: Dict[str, Any] = field(default_factory=lambda: {'providers': {}})
     
     # Language support
     supported_languages: List[str] = field(default_factory=lambda: [
@@ -138,6 +141,7 @@ class Settings:
         if output_dir:
             settings.output_dir = Path(output_dir)
             
+        settings.config_file = get_default_config_path()
         return settings
     
     @classmethod
@@ -239,6 +243,7 @@ class Settings:
                 'date_increment_seconds': self.git.date_increment_seconds,
                 'gpg_sign_key': self.git.gpg_sign_key
             },
+            'auth': self.auth,
             'output_dir': str(self.output_dir),
             'supported_languages': self.supported_languages
         }
@@ -253,18 +258,15 @@ class Settings:
     def validate(self) -> List[str]:
         """Validate settings and return list of validation errors"""
         errors = []
-        
-        # Validate LLM settings
-        from ..llm.providers.registry import provider_requires_api_key
-        
-        try:
-            requires_key = provider_requires_api_key(self.llm.provider)
-        except ValueError:
-            # Provider not found, assume it requires API key for safety
-            requires_key = True
-        
-        if not self.llm.api_key and requires_key:
-            errors.append(f"API key required for {self.llm.provider} provider")
+
+        # Validate LLM settings structure
+        from ..constants import KNOWN_LLM_PROVIDERS
+
+        if self.llm.provider not in KNOWN_LLM_PROVIDERS:
+            errors.append(
+                f"Unknown LLM provider: {self.llm.provider}. "
+                f"Available: {', '.join(KNOWN_LLM_PROVIDERS)}"
+            )
         
         if self.llm.temperature < 0 or self.llm.temperature > 2:
             errors.append("LLM temperature must be between 0 and 2")
@@ -294,13 +296,17 @@ _settings: Optional[Settings] = None
 def get_settings(config_file: Optional[Path] = None, force_reload: bool = False) -> Settings:
     """Get application settings (cached)"""
     global _settings
-    
+
+    resolved_config = config_file or get_default_config_path()
+
     if _settings is None or force_reload:
-        if config_file and config_file.exists():
-            _settings = Settings.from_file(config_file)
+        if resolved_config.exists():
+            _settings = Settings.from_file(resolved_config)
         else:
             _settings = Settings.from_env()
-    
+
+        _settings.config_file = resolved_config
+
     return _settings
 
 

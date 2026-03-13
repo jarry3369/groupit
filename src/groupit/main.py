@@ -46,16 +46,17 @@ def main() -> int:
         setup_logging()
         
         # Load configuration file if specified
+        from .config import get_settings
         if hasattr(args, 'config') and args.config:
-            from .config import get_settings
-            config_path = Path(args.config)
-            if config_path.exists():
-                get_settings(config_path, force_reload=True)
+            get_settings(Path(args.config), force_reload=True)
         
         # Dispatch to appropriate command - import only the needed command
         if args.command == 'analyze':
             from .cli.commands import analyze_command
             return analyze_command(args)
+        elif args.command == 'auth':
+            from .cli.commands import auth_command
+            return auth_command(args)
         elif args.command == 'commit':
             from .cli.commands import commit_command
             return commit_command(args)

@@ -8,6 +8,7 @@ dependencies until they are actually needed.
 __all__ = [
     'create_parser',
     'analyze_command',
+    'auth_command',
     'commit_command',
     'split_command',
     'status_command',
@@ -34,6 +35,11 @@ def __getattr__(name: str):
         from .commands import analyze_command
         _cached['analyze_command'] = analyze_command
         return analyze_command
+
+    if name == 'auth_command':
+        from .commands import auth_command
+        _cached['auth_command'] = auth_command
+        return auth_command
 
     if name == 'commit_command':
         from .commands import commit_command

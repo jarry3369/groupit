@@ -8,6 +8,7 @@ from pathlib import Path
 
 from rich.console import Console
 
+from ...auth import AuthService
 from ...core import CommitGroupingAgent
 from ...config import setup_logging, get_settings, update_settings
 
@@ -120,36 +121,21 @@ def _validate_llm_config(args: argparse.Namespace) -> bool:
     """Validate LLM configuration"""
     if args.llm == 'none':
         return True
-    
-    # Import here to avoid circular imports
-    from ...llm.providers.registry import provider_requires_api_key
-    
-    # Check if API key is available for providers that require it
-    try:
-        requires_key = provider_requires_api_key(args.llm)
-    except ValueError:
-        # Provider not found, assume it requires API key
-        requires_key = True
-    
-    if requires_key and not args.api_key:
-        # Try to get from environment
-        import os
-        env_key = f'{args.llm.upper()}_API_KEY'
-        if not os.getenv(env_key):
-            console.print(f"[red]Error: API key required for {args.llm} provider[/red]")
-            console.print(f"[yellow]Set {env_key} environment variable or use --api-key option[/yellow]")
-            return False
-    
-    # Try to validate provider
-    try:
-        from ...llm import validate_provider
-        api_key_for_validation = args.api_key if requires_key else "dummy"
-        if not validate_provider(args.llm, api_key_for_validation):
-            console.print(f"[yellow]Warning: Could not validate {args.llm} provider[/yellow]")
-            console.print("[yellow]Proceeding anyway, but analysis might fail[/yellow]")
-    except Exception as e:
-        console.print(f"[yellow]Warning: Provider validation failed: {e}[/yellow]")
-    
+
+    if args.api_key:
+        console.print(
+            "[yellow]Warning: --api-key is deprecated. "
+            "Use `groupit auth login {provider}` or environment variables instead.[/yellow]".format(
+                provider=args.llm
+            )
+        )
+
+    resolution = AuthService().resolve(args.llm, explicit_api_key=args.api_key)
+    if resolution.requires_auth and not resolution.credential:
+        console.print(f"[red]Error: API key required for {args.llm} provider[/red]")
+        console.print(f"[yellow]{resolution.diagnostic}[/yellow]")
+        return False
+
     return True
 
 

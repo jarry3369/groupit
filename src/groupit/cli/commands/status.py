@@ -80,6 +80,26 @@ def _display_status(status: dict, detailed: bool = False) -> None:
     
     # Pipeline information (if detailed)
     if detailed:
+        auth_info = status.get('auth', {})
+        if auth_info:
+            auth_table = Table(show_header=True, header_style="bold yellow")
+            auth_table.add_column("Provider", style="cyan")
+            auth_table.add_column("Active Source", style="white")
+            auth_table.add_column("Validation", style="white")
+            auth_table.add_column("Stored", style="white")
+            auth_table.add_column("Env", style="white")
+
+            for provider, entry in auth_info.items():
+                auth_table.add_row(
+                    provider,
+                    entry.get('active_source', 'unknown'),
+                    entry.get('validation_state', 'unknown'),
+                    "Yes" if entry.get('stored_available', False) else "No",
+                    "Yes" if entry.get('env_available', False) else "No",
+                )
+
+            console.print(Panel(auth_table, title="Auth Status", border_style="yellow"))
+
         pipeline_info = status.get('pipeline', {})
         if pipeline_info:
             pipeline_table = Table(show_header=True, header_style="bold magenta")

@@ -35,14 +35,21 @@ pip install groupit
 
 GroupIt supports multiple LLM providers. Choose one based on your needs:
 
+#### Recommended Local CLI Flow
+```bash
+groupit auth login openai
+groupit auth status
+groupit analyze --staged --llm openai
+```
+
 #### OpenAI (Recommended)
 ```bash
-export OPENAI_API_KEY="your-api-key-here"
+groupit auth login openai
 ```
 
 #### Google Gemini
 ```bash
-export GEMINI_API_KEY="your-api-key-here"
+groupit auth login gemini
 ```
 
 #### Ollama (Local/Free)
@@ -54,10 +61,16 @@ ollama pull llama3.2  # or your preferred model
 
 ### Environment Variables
 
+Environment variables remain supported for CI and headless automation. They take precedence over stored local auth for the current process.
+
 ```bash
 # LLM Configuration
 export GROUPIT_LLM_PROVIDER="openai"  # openai, gemini, ollama
 export GROUPIT_LLM_TEMPERATURE="0.3"
+
+# Provider credentials for CI/headless use
+export OPENAI_API_KEY="your-api-key-here"
+export GEMINI_API_KEY="your-api-key-here"
 
 # Clustering Parameters
 export GROUPIT_CLUSTERING_EPS="0.35"
@@ -83,6 +96,9 @@ export GROUPIT_GIT_GPG_SIGN_KEY=""
 ### Quick Start
 
 ```bash
+# Store your credential once for local CLI use
+groupit auth login openai
+
 # Analyze staged changes with OpenAI
 groupit analyze --staged --llm openai
 
@@ -104,6 +120,17 @@ groupit split HEAD~2 --execute --preserve-metadata
 
 ### Command Reference
 
+#### Manage Auth
+```bash
+groupit auth <login|status|logout> [OPTIONS]
+
+Examples:
+  groupit auth login openai
+  groupit auth login gemini --no-validate
+  groupit auth status --json
+  groupit auth logout openai
+```
+
 #### Analyze Changes
 ```bash
 groupit analyze [OPTIONS]
@@ -111,7 +138,7 @@ groupit analyze [OPTIONS]
 Options:
   --staged              Analyze only staged changes
   --llm PROVIDER        LLM provider (openai, gemini, ollama)
-  --api-key KEY         API key for LLM provider
+  --api-key KEY         API key override for LLM provider (deprecated)
   --model MODEL         Specific model to use
   --temperature TEMP    LLM temperature (0.0-2.0)
   --eps FLOAT           DBSCAN clustering epsilon
@@ -149,7 +176,7 @@ Options:
   --committer-date ISO     Override committer date
   --gpg-sign KEY           Sign rewritten commits with the given GPG key id
   --llm PROVIDER           LLM provider (openai, gemini, ollama, none)
-  --api-key KEY            API key for LLM provider
+  --api-key KEY            API key override for LLM provider (deprecated)
   --model MODEL            Specific model to use
   --temperature TEMP       LLM temperature (0.0-2.0)
   --eps FLOAT              DBSCAN clustering epsilon
@@ -181,7 +208,7 @@ groupit validate [OPTIONS]
 
 Options:
   --llm-provider PROVIDER  Validate specific provider
-  --api-key KEY           API key to validate
+  --api-key KEY           API key override to validate (deprecated)
   --fix                   Attempt to fix issues
 ```
 

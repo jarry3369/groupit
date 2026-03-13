@@ -23,7 +23,9 @@ from .metadata import (
     build_preserved_commit_kwargs,
     offset_datetime,
 )
+from ..auth import AuthService, auth_inspection_to_dict
 from ..config import get_settings, get_logger
+from ..constants import KNOWN_LLM_PROVIDERS
 
 logger = get_logger(__name__)
 console = Console()
@@ -453,4 +455,9 @@ class CommitGroupingAgent:
                 'debug_mode': self.settings.debug,
                 'performance_caching': self.settings.performance.enable_caching
             }
+            ,
+            'auth': {
+                provider: auth_inspection_to_dict(AuthService().inspect(provider))
+                for provider in KNOWN_LLM_PROVIDERS
+            },
         }

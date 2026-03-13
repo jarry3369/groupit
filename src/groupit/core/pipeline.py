@@ -62,7 +62,6 @@ class CommitGroupingPipeline:
         """
         # Use settings with overrides
         llm_provider = llm_provider or self.settings.llm.provider
-        llm_api_key = llm_api_key or self.settings.llm.api_key
         
         # Create processors with dependency injection
         pipeline = ProcessorPipeline("CommitGrouping")

@@ -6,9 +6,10 @@ import logging
 from typing import Optional, Dict, Any
 from functools import lru_cache
 
+from ..auth import AuthService
 from .base import LLMProvider
 from .providers.registry import create_provider, get_available_providers, is_provider_available
-from ..config.settings import get_settings, LLMSettings
+from ..config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +49,10 @@ class LLMFactory:
             provider_name = settings.llm.provider
         
         if api_key is None:
-            # Try to get API key from settings or environment
-            llm_settings = LLMSettings(provider=provider_name)
-            api_key = llm_settings.api_key
-        
+            auth_service = AuthService()
+            resolution = auth_service.resolve(provider_name)
+            api_key = resolution.credential
+
         # Ollama doesn't require API key (local server)
         if not api_key and provider_name != 'ollama':
             raise ValueError(f"API key required for {provider_name} provider")
@@ -68,7 +69,7 @@ class LLMFactory:
         if provider_name == 'ollama':
             cache_key = f"{provider_name}:local:{model}"
         else:
-            cache_key = f"{provider_name}:{api_key[:8]}:{model}"
+            cache_key = f"{provider_name}:{model or settings.llm.model or 'default'}"
         
         # Return cached instance if exists
         if cache_key in self._instances:

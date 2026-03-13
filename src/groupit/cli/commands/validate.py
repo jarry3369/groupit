@@ -3,11 +3,10 @@ Validate command implementation.
 """
 
 import argparse
-import os
 
 from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
+
+from ...auth import AuthService
 
 console = Console()
 
@@ -100,7 +99,7 @@ def _validate_llm_providers(specific_provider: str = None, api_key: str = None) 
     console.print("\n[bold]Checking LLM Providers[/bold]")
     
     try:
-        from ...llm import get_available_providers, validate_provider
+        from ...llm import get_available_providers
         
         providers = get_available_providers()
         console.print(f"Available providers: {', '.join(providers)}")
@@ -117,42 +116,40 @@ def _validate_llm_providers(specific_provider: str = None, api_key: str = None) 
         else:
             providers_to_check = providers
         
+        auth_service = AuthService()
+
         for provider in providers_to_check:
             if provider not in providers:
                 console.print(f"[red]✗[/red] {provider} - Not available")
                 all_valid = False
                 continue
-            
-            # Import here to avoid circular imports
-            from ...llm.providers.registry import provider_requires_api_key
-            
-            # Check if provider requires API key
-            try:
-                requires_key = provider_requires_api_key(provider)
-            except ValueError:
-                requires_key = True
-            
-            # Check API key (skip for providers that don't need it)
-            provider_api_key = api_key or os.getenv(f'{provider.upper()}_API_KEY')
-            
-            if not requires_key:
-                # For providers without API key requirement, use dummy key for validation
-                provider_api_key = "dummy"
+
+            if api_key:
+                console.print(
+                    f"[yellow]Warning:[/yellow] validating {provider} with deprecated --api-key override"
+                )
+
+            inspection = auth_service.inspect(provider)
+            if not inspection.requires_auth:
                 console.print(f"[green]✓[/green] {provider} - Local provider (no API key required)")
-            elif not provider_api_key:
-                console.print(f"[yellow]○[/yellow] {provider} - No API key (set {provider.upper()}_API_KEY)")
                 continue
-            
-            # Try to validate with actual API call
-            try:
-                is_valid = validate_provider(provider, provider_api_key)
-                if is_valid and requires_key:
-                    console.print(f"[green]✓[/green] {provider} - Valid")
-                elif not is_valid:
-                    console.print(f"[red]✗[/red] {provider} - Invalid API key or connection failed")
-                    all_valid = False
-            except Exception as e:
-                console.print(f"[yellow]○[/yellow] {provider} - Validation failed: {e}")
+
+            if inspection.active_source == 'none' and not api_key:
+                console.print(f"[yellow]○[/yellow] {provider} - {inspection.diagnostic}")
+                continue
+
+            is_valid, resolution = auth_service.validate_active(provider, explicit_api_key=api_key)
+            label = auth_service.format_validation_label(resolution.validation_state)
+            if is_valid:
+                console.print(
+                    f"[green]✓[/green] {provider} - Valid ({resolution.source}, {label})"
+                )
+            else:
+                console.print(
+                    f"[red]✗[/red] {provider} - Invalid or unreachable ({resolution.source}, {label})"
+                )
+                console.print(f"[dim]{resolution.diagnostic}[/dim]")
+                all_valid = False
         
         return all_valid
         
@@ -198,7 +195,7 @@ def _validate_configuration() -> bool:
         
         settings = get_settings()
         
-        # Validate settings
+        # Validate settings structure
         validation_errors = settings.validate()
         
         if validation_errors:
